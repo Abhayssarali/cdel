@@ -1,0 +1,15 @@
+{
+  "name": "dead-instruction-eliminator-web",
+  "version": "1.0.0",
+  "description": "Interactive Web UI for LLVM Dead Code Eliminator using Use-Def Analysis",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "author": "",
+  "license": "ISC"
+}

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dead Instruction Eliminator | Compiler Design Tool</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+  <!-- CSS -->
+  <link rel="stylesheet" href="style.css">
+  <!-- Load Monaco Editor via CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js"></script>
+</head>
+<body>
+
+  <!-- Background Decorative Orbs -->
+  <div class="orb orb-purple"></div>
+  <div class="orb orb-cyan"></div>
+  <div class="orb orb-indigo"></div>
+
+  <div class="app-container">
+    
+    <!-- ── Header ───────────────────────────────────────────────────────────── -->
+    <header class="app-header">
+      <div class="logo-area">
+        <div class="logo-icon">⚡</div>
+        <div>
+          <h1>Dead Instruction Eliminator</h1>
+          <p class="subtitle">Out-of-Tree LLVM Pass using Iterative Use-Def Chain Analysis</p>
+        </div>
+      </div>
+      <div class="action-bar">
+        <div class="lang-toggle">
+          <button id="btn-lang-c" class="lang-btn active">C Code</button>
+          <button id="btn-lang-ll" class="lang-btn">LLVM IR</button>
+        </div>
+        <div class="preset-selector">
+          <label for="preset-select">Presets:</label>
+          <select id="preset-select" class="custom-select">
+            <option value="" disabled selected>Choose...</option>
+            <option value="c-example">C: Dead Code Example</option>
+            <option value="test1">IR: Simple Dead Store</option>
+            <option value="test2">IR: Cascading Dead Chain</option>
+            <option value="test3">IR: Mixed Live & Side-Effects</option>
+            <option value="test4">IR: Dead PHI Nodes & CFG</option>
+            <option value="test5">IR: All-Live Code</option>
+          </select>
+        </div>
+        <button id="btn-upload" class="btn btn-secondary">
+          <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          Upload File
+        </button>
+        <input type="file" id="file-input" accept=".ll,.c,.txt" style="display: none;">
+      </div>
+    </header>
+
+    <!-- ── Dashboard Metrics Grid ────────────────────────────────────────────── -->
+    <section class="metrics-grid">
+      <div class="metric-card glass">
+        <div class="metric-icon color-cyan">📋</div>
+        <div class="metric-info">
+          <span class="metric-label">Instructions Scanned</span>
+          <span id="metric-scanned" class="metric-value">0</span>
+        </div>
+      </div>
+      <div class="metric-card glass">
+        <div class="metric-icon color-red">🗑️</div>
+        <div class="metric-info">
+          <span class="metric-label">Dead Eliminated</span>
+          <span id="metric-eliminated" class="metric-value">0</span>
+        </div>
+      </div>
+      <div class="metric-card glass">
+        <div class="metric-icon color-purple">📉</div>
+        <div class="metric-info">
+          <span class="metric-label">Reduction Ratio</span>
+          <span id="metric-reduction" class="metric-value">0%</span>
+        </div>
+      </div>
+      <div class="metric-card glass">
+        <div class="metric-icon color-gold">⚙️</div>
+        <div class="metric-info">
+          <span class="metric-label">Functions Optimized</span>
+          <span id="metric-functions" class="metric-value">0</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Workspace Layout ─────────────────────────────────────────────────── -->
+    <main class="workspace-grid">
+      
+      <!-- Left Panel: Input Code Editor -->
+      <section class="panel glass">
+        <div class="panel-header">
+          <h2 id="input-panel-title">Input C Code</h2>
+          <span class="badge badge-input">editable</span>
+        </div>
+        <div class="editor-container">
+          <div id="input-editor" class="code-editor"></div>
+        </div>
+        <div class="panel-actions">
+          <button id="btn-optimize" class="btn btn-primary btn-glow">
+            <svg class="icon animate-spin-hover" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Eliminate Dead Code
+          </button>
+        </div>
+      </section>
+
+      <!-- Right Panel: Outputs and Analysis -->
+      <section class="panel glass">
+        <div class="panel-header">
+          <div class="tabs">
+            <button id="tab-optimized" class="tab-btn active">Optimized IR</button>
+            <button id="tab-generated" class="tab-btn">Generated IR</button>
+            <button id="tab-report" class="tab-btn">Analysis Logs</button>
+          </div>
+          <span id="output-badge" class="badge badge-output">read-only</span>
+        </div>
+        
+        <!-- Tab 1: Optimized IR -->
+        <div id="content-optimized" class="tab-content active">
+          <div class="editor-container">
+            <div id="output-editor" class="code-editor"></div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Generated IR (from C code) -->
+        <div id="content-generated" class="tab-content">
+          <div class="editor-container">
+            <div id="generated-editor" class="code-editor"></div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Console Report -->
+        <div id="content-report" class="tab-content">
+          <div class="console-container">
+            <pre id="console-output" class="terminal-text">Optimization logs will appear here when you click "Eliminate Dead Code".</pre>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ── Brief Theory section ───────────────────────────────────────────── -->
+    <footer class="app-footer glass">
+      <h3>Analysis Process:</h3>
+      <div class="steps-flow">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-desc">
+            <h4>Build Use-Def Chains</h4>
+            <p>Traverses instructions to link every value definition with its users.</p>
+          </div>
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-desc">
+            <h4>Worklist Iteration</h4>
+            <p>Iteratively identifies instructions with empty users that are safe to delete.</p>
+          </div>
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-desc">
+            <h4>Safe Elimination</h4>
+            <p>Safely drops references and erases dead code while preserving side-effects.</p>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
