@@ -71,9 +71,23 @@ bool llvm::isSafeToDelete(const Instruction *I) {
   if (I->isTerminator())
     return false;
 
-  // Stores always have side effects
-  if (isa<StoreInst>(I))
+  // Stores usually have side effects, EXCEPT if they store to a local alloca
+  // that is NEVER loaded from anywhere in the function. (Dead Store)
+  if (const auto *SI = dyn_cast<StoreInst>(I)) {
+    if (const auto *Alloca = dyn_cast<AllocaInst>(SI->getPointerOperand())) {
+      bool hasLoad = false;
+      for (const User *U : Alloca->users()) {
+        if (isa<LoadInst>(U)) {
+          hasLoad = true;
+          break;
+        }
+      }
+      if (!hasLoad) {
+        return true; // This is a Dead Store!
+      }
+    }
     return false;
+  }
 
   // Calls may have side effects (conservative: skip all calls)
   if (isa<CallInst>(I) || isa<InvokeInst>(I))

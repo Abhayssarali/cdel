@@ -2,11 +2,8 @@
 
 An out-of-tree **LLVM 17** compiler optimization pass that performs **Dead Instruction Elimination (DIE)** using custom iterative **Use-Def Chain Analysis**, wrapped in a modern, interactive web frontend.
 
-## Features
-- **Custom Use-Def Analysis**: Iteratively tracks the operands and users of every instruction.
-- **Worklist Algorithm**: Cascading elimination—when an instruction is deleted, it checks if the parent instructions are now dead and eliminates them too.
-- **Automated C Compilation**: Web frontend allows writing raw C code, which is automatically compiled into LLVM IR via `clang` and lifted to SSA registers using `mem2reg` before optimization.
-- **Visual Dashboard**: Modern glassmorphic UI displaying the unoptimized IR, the final optimized IR, and a detailed Use-Def analysis report showing exactly which instructions were marked `[✓ LIVE]` or `[✗ DEAD]`.
+## What it does
+The compiler pass analyzes LLVM Intermediate Representation (IR) to identify and safely remove instructions whose results are never used (dead code). It also implements local **Dead Store Elimination** by identifying memory allocations (`alloca`) that are stored into but never loaded from.
 
 ## Prerequisites
 - **LLVM 17** (`clang-17`, `opt-17`, `llvm-17-dev`)
@@ -14,23 +11,22 @@ An out-of-tree **LLVM 17** compiler optimization pass that performs **Dead Instr
 - **Node.js** (for the web frontend)
 - A Linux environment (or WSL on Windows)
 
-## Build Instructions (Backend)
+## How to Build & Run (Command Line)
 
-1. Clone the repository and navigate into it:
-   ```bash
-   mkdir build
-   cd build
-   ```
-2. Run CMake and compile:
-   ```bash
-   cmake ..
-   make
-   ```
-This will produce the standalone tool `die-tool` in the `build/` directory.
+You can use the included scripts to build the C++ pass:
+```bash
+./build.sh
+```
 
-## Running the Web Server
+To run the tool on a test case:
+```bash
+./run.sh testcases/dead_code.c
+```
+*(This script will automatically use `clang-17` to compile the C code to LLVM IR, and then run the `die-tool` pass on it).*
 
-The project includes a Node.js Express server that bridges the web UI with the WSL/Linux command-line compiler backend.
+## How to Run (Web Interface)
+
+The project includes an interactive Node.js Express server that bridges the web UI with the backend compiler.
 
 1. Install dependencies:
    ```bash
@@ -41,16 +37,3 @@ The project includes a Node.js Express server that bridges the web UI with the W
    npm start
    ```
 3. Open your browser and navigate to: **http://localhost:3000**
-
-## Project Structure
-- `src/` - Contains the C++ LLVM Pass logic (`DeadInstructionEliminator.cpp` & `main.cpp`).
-- `public/` - Contains the HTML, CSS, and JS for the frontend (Monaco Editor integration).
-- `server.js` - The Express backend that coordinates `clang-17`, `opt-17`, and `die-tool`.
-- `tests/` - Example `.ll` test cases and temporary execution files.
-
-## How It Works Under The Hood
-1. The server saves the C code input and runs `clang-17 -O0` to generate unoptimized LLVM IR.
-2. The server runs `opt-17 -passes=mem2reg` to promote memory `alloca` / `store` / `load` instructions into pure SSA virtual registers.
-3. The server runs `./build/die-tool`. The pass builds a graph of all instruction uses.
-4. An instruction is seeded into the worklist if it is "Safe to Delete" (has no side effects like memory stores or branches) AND has `0` uses.
-5. The algorithm iterates until the worklist is empty, continuously stripping away dead mathematical operations and assignments.

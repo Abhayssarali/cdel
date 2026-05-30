@@ -121,6 +121,9 @@ app.post('/api/optimize', async (req, res) => {
       }
 
       // ── Step 2.5: Promote Memory to Register (mem2reg) ─────────────────
+      // We are skipping mem2reg now so that our custom DIE pass can see
+      // and eliminate dead allocas and stores itself!
+      /*
       compilationLog += '[Web Server] Running mem2reg to lift local variables to SSA registers...\n';
       const mem2regCmd = `cd ${wslProjectDir} && opt-17 -passes=mem2reg -S tests/${inputLLFile} -o tests/${inputLLFile} 2>&1`;
       const mem2regResult = await wslExec(mem2regCmd);
@@ -130,6 +133,7 @@ app.post('/api/optimize', async (req, res) => {
       if (mem2regResult.stdout) {
         compilationLog += mem2regResult.stdout + '\n';
       }
+      */
 
       llvmIRInput = fs.readFileSync(llFilePath, 'utf8');
       compilationLog += '[Web Server] Compilation successful. Generated LLVM IR (' + llvmIRInput.split('\n').length + ' lines).\n';
