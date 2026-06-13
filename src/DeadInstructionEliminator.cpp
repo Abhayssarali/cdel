@@ -54,6 +54,73 @@ STATISTIC(NumTotalInst,  "Number of instructions scanned");
 STATISTIC(NumIterations, "Number of worklist iterations performed");
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helper: isAllocaDead
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Determines whether ALL loads from an alloca feed exclusively back into
+/// stores to the SAME alloca (a fully self-contained write-back cycle).
+///
+/// This detects patterns like:
+///   int c = 10;   → store 10, %c
+///   c++;          → load %c → add 1 → store back to %c
+///                    (the loaded value NEVER escapes to an external consumer)
+///
+/// Algorithm: BFS forward through the use-def graph starting from every
+/// LoadInst of the alloca.  If we reach any instruction whose result escapes
+/// outside of a write-back-store to the same alloca, return false (live).
+/// If the entire reachable subgraph consists only of write-back stores, return
+/// true (dead).
+static bool isAllocaDead(const AllocaInst *Alloca) {
+  llvm::SmallVector<const Instruction *, 16> Worklist;
+  llvm::SmallPtrSet<const Instruction *, 16> Visited;
+
+  // Seed the worklist with all LoadInsts that read from this alloca.
+  for (const User *U : Alloca->users()) {
+    if (const auto *LI = dyn_cast<LoadInst>(U)) {
+      if (Visited.insert(LI).second)
+        Worklist.push_back(LI);
+    }
+  }
+
+  // BFS: follow every downstream use of the loaded values.
+  while (!Worklist.empty()) {
+    const Instruction *I = Worklist.pop_back_val();
+
+    for (const User *U : I->users()) {
+      const auto *UI = dyn_cast<Instruction>(U);
+      if (!UI)
+        return false; // used by a non-instruction (e.g., constant expr) → live
+
+      // A store whose VALUE operand is what we're tracking:
+      if (const auto *SI = dyn_cast<StoreInst>(UI)) {
+        // Check that this store writes back to the SAME alloca.
+        if (dyn_cast<AllocaInst>(SI->getPointerOperand()) == Alloca)
+          continue; // pure write-back — value doesn't escape
+        // Stored somewhere else (different alloca, heap, etc.) → live
+        return false;
+      }
+
+      // Calls/invokes consume the value as a function argument → it escapes
+      // to an external consumer (e.g., printf).  Even though the call's RETURN
+      // value may be unused, the argument value itself is consumed.
+      if (isa<CallInst>(UI) || isa<InvokeInst>(UI))
+        return false;
+
+      // Terminators (ret, switch, indirectbr with values) → value escapes
+      if (UI->isTerminator())
+        return false;
+
+      // Pure computation (arithmetic, casts, GEPs, etc.): follow its users.
+      if (Visited.insert(UI).second)
+        Worklist.push_back(UI);
+    }
+  }
+
+  // Every downstream use was a write-back store to the same alloca → dead.
+  return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Helper: isSafeToDelete
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -71,20 +138,21 @@ bool llvm::isSafeToDelete(const Instruction *I) {
   if (I->isTerminator())
     return false;
 
-  // Stores usually have side effects, EXCEPT if they store to a local alloca
-  // that is NEVER loaded from anywhere in the function. (Dead Store)
+  // Stores usually have side effects, EXCEPT when they write to a local alloca
+  // whose value is NEVER consumed outside a self-contained write-back cycle.
+  //
+  // Examples that should be eliminated:
+  //   int c = 10;   → store 10, %c            (no downstream load at all)
+  //   c++;          → load %c → add 1 → store %c  (full dead write-back chain)
+  //
+  // isAllocaDead() performs a full BFS from every load of the alloca to
+  // determine whether the loaded value EVER escapes to an external consumer.
+  // This correctly handles multi-step chains (load → arith → store back),
+  // unlike a shallow one-level check.
   if (const auto *SI = dyn_cast<StoreInst>(I)) {
     if (const auto *Alloca = dyn_cast<AllocaInst>(SI->getPointerOperand())) {
-      bool hasLoad = false;
-      for (const User *U : Alloca->users()) {
-        if (isa<LoadInst>(U)) {
-          hasLoad = true;
-          break;
-        }
-      }
-      if (!hasLoad) {
-        return true; // This is a Dead Store!
-      }
+      if (isAllocaDead(Alloca))
+        return true; // Dead store — value never consumed externally
     }
     return false;
   }
